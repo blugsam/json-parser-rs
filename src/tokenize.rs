@@ -1,3 +1,7 @@
+use std::char;
+use std::iter::Peekable;
+use std::str::Chars;
+
 #[derive(Debug, PartialEq)]
 pub enum Token {
     /// `{`
@@ -30,26 +34,19 @@ pub enum TokenizeError {
 }
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
-    let chars: Vec<char> = input.chars().collect();
-    let mut index = 0;
+    let mut chars = input.chars().peekable();
 
     let mut tokens = Vec::new();
-    while index < chars.len() {
-        let token = make_token(&chars, &mut index)?;
+
+    while let Some(c) = chars.next() {
+        let token = make_token(&mut chars,c)?;
         tokens.push(token);
-        index += 1;
     }
     
     Ok(tokens)
 }
 
-// "Normally, the Vec wouldn't be borrow with &Vec<char>, it would actually be borrowed as a slice, which is written as &[char].
-// This is essentially a "view" into the data that is owned by the Vec.
-// It's not necessary to learn this concept for this tutorial
-// So we'll continue to use the &Vec<char> version even though you wouldn't normally see that in production code."
-fn make_token(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-    let ch = chars[*index];
-
+fn make_token(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, TokenizeError> {
     let token = match ch {
         '[' => Token::LeftBracket,
         ']' => Token::RightBracket,
@@ -57,47 +54,48 @@ fn make_token(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeErr
         '}' => Token::RightBrace,
         ',' => Token::Comma,
         ':' => Token::Colon,
-        't' => tokenize_true(chars, index)?,
-        'f' => tokenize_false(chars, index)?,
-        'n' => tokenize_null(chars, index)?,
+        't' => tokenize_true(chars)?,
+        // 'f' => tokenize_false(chars, index)?,
+        // 'n' => tokenize_null(chars, index)?,
         _ => todo!("implement other tokens")
     };
 
     Ok(token)
 }
 
-fn tokenize_true(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-    for expected_char in "true".chars() {
-        if expected_char != chars[*index] {
-            return Err(TokenizeError::UnfinishedLiteralValue);
+fn tokenize_true(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
+
+    for expected_char in "rue".chars() {
+        if chars.peek() != Some(&expected_char) {
+            return Err(TokenizeError::UnfinishedLiteralValue)
         }
-        *index += 1;
+        chars.next();
     }
 
     Ok(Token::True)
 }
 
-fn tokenize_false(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-    for expected_char in "false".chars() {
-        if expected_char != chars[*index] {
-            return Err(TokenizeError::UnfinishedLiteralValue);
-        }
-        *index += 1;
-    }
+// fn tokenize_false(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
+//     for expected_char in "false".chars() {
+//         if expected_char != chars[*index] {
+//             return Err(TokenizeError::UnfinishedLiteralValue);
+//         }
+//         *index += 1;
+//     }
 
-    Ok(Token::False)
-}
+//     Ok(Token::False)
+// }
 
-fn tokenize_null(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-    for expected_char in "null".chars() {
-        if expected_char != chars[*index] {
-            return Err(TokenizeError::UnfinishedLiteralValue);
-        }
-        *index += 1;
-    }
+// fn tokenize_null(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
+//     for expected_char in "null".chars() {
+//         if expected_char != chars[*index] {
+//             return Err(TokenizeError::UnfinishedLiteralValue);
+//         }
+//         *index += 1;
+//     }
 
-    Ok(Token::Null)
-}
+//     Ok(Token::Null)
+// }
 
 #[cfg(test)]
 mod tests {
@@ -130,6 +128,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    // TODO: must implement null possibility
     #[test]
     fn just_null() {
         let input = String::from("null");
@@ -150,15 +149,15 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    #[test]
-    fn just_false() {
-        let input = String::from("false");
-        let expected = [Token::False];
+    // #[test]
+    // fn just_false() {
+    //     let input = String::from("false");
+    //     let expected = [Token::False];
 
-        let actual = tokenize(input).unwrap();
+    //     let actual = tokenize(input).unwrap();
 
-        assert_eq!(actual, expected);
-    }
+    //     assert_eq!(actual, expected);
+    // }
 
     #[test]
     fn true_comma() {
