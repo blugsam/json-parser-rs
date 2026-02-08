@@ -55,8 +55,8 @@ fn make_token(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, Tokeni
         ',' => Token::Comma,
         ':' => Token::Colon,
         't' => tokenize_true(chars)?,
-        // 'f' => tokenize_false(chars, index)?,
-        // 'n' => tokenize_null(chars, index)?,
+        'f' => tokenize_false(chars)?,
+        'n' => tokenize_null(chars)?,
         _ => todo!("implement other tokens")
     };
 
@@ -64,7 +64,6 @@ fn make_token(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, Tokeni
 }
 
 fn tokenize_true(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
-
     for expected_char in "rue".chars() {
         if chars.peek() != Some(&expected_char) {
             return Err(TokenizeError::UnfinishedLiteralValue)
@@ -75,27 +74,27 @@ fn tokenize_true(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError
     Ok(Token::True)
 }
 
-// fn tokenize_false(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-//     for expected_char in "false".chars() {
-//         if expected_char != chars[*index] {
-//             return Err(TokenizeError::UnfinishedLiteralValue);
-//         }
-//         *index += 1;
-//     }
+fn tokenize_false(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
+    for expected_char in "alse".chars() {
+        if chars.peek() != Some(&expected_char) {
+            return Err(TokenizeError::UnfinishedLiteralValue)
+        }
+        chars.next();
+    }
 
-//     Ok(Token::False)
-// }
+    Ok(Token::False)
+}
 
-// fn tokenize_null(chars: &Vec<char>, index: &mut usize) -> Result<Token, TokenizeError> {
-//     for expected_char in "null".chars() {
-//         if expected_char != chars[*index] {
-//             return Err(TokenizeError::UnfinishedLiteralValue);
-//         }
-//         *index += 1;
-//     }
+fn tokenize_null(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
+    for expected_char in "ull".chars() {
+        if chars.peek() != Some(&expected_char) {
+            return Err(TokenizeError::UnfinishedLiteralValue);
+        }
+        chars.next();
+    }
 
-//     Ok(Token::Null)
-// }
+    Ok(Token::Null)
+}
 
 #[cfg(test)]
 mod tests {
@@ -128,7 +127,6 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    // TODO: must implement null possibility
     #[test]
     fn just_null() {
         let input = String::from("null");
@@ -149,15 +147,15 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
-    // #[test]
-    // fn just_false() {
-    //     let input = String::from("false");
-    //     let expected = [Token::False];
+    #[test]
+    fn just_false() {
+        let input = String::from("false");
+        let expected = [Token::False];
 
-    //     let actual = tokenize(input).unwrap();
+        let actual = tokenize(input).unwrap();
 
-    //     assert_eq!(actual, expected);
-    // }
+        assert_eq!(actual, expected);
+    }
 
     #[test]
     fn true_comma() {
