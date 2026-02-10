@@ -30,7 +30,10 @@ pub enum Token {
 pub enum TokenizeError {
     UnfinishedLiteralValue,
     InvalidNumber(String),
-    ParseNumberError(ParseFloatError)
+    ParseNumberError(ParseFloatError),
+    UnclosedQuotes,
+    CharNotRecognized(char),
+    UnexpectedEof
 }
 
 pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
@@ -46,9 +49,17 @@ pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
     Ok(tokens)
 }
 
-fn make_token(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, TokenizeError> {
+fn make_token(chars: &mut Peekable<Chars<'_>>, mut ch: char) -> Result<Token, TokenizeError> {
+    while ch.is_ascii_whitespace() {
+        if chars.peek() == None {
+            return Err(TokenizeError::UnexpectedEof);
+        }
+        ch = chars.next().unwrap();
+    }
+
     let token = match ch {
         c if is_number(ch) => tokenize_float(chars, c)?,
+        '"' => tokenize_string(chars)?,
         '[' => Token::LeftBracket,
         ']' => Token::RightBracket,
         '{' => Token::LeftBrace,
@@ -58,7 +69,7 @@ fn make_token(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, Tokeni
         't' => tokenize_true(chars)?,
         'f' => tokenize_false(chars)?,
         'n' => tokenize_null(chars)?,
-        _ => todo!("implement other tokens")
+        ch => return Err(TokenizeError::CharNotRecognized(ch)),
     };
 
     Ok(token)
@@ -133,6 +144,28 @@ fn is_decimal(has_decimal: bool, has_exponenta: bool, c: char) -> bool {
     c == '.' && !has_decimal && !has_exponenta
 }
 
+fn tokenize_string(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
+    let mut string = String::new();
+    let mut is_closed: bool = false;
+    let mut is_escaping: bool = false;
+
+    while let Some(c) = chars.next() {
+        match c {
+            '"' if !is_escaping => { is_closed = true; break; },
+            '\\' => is_escaping = !is_escaping,
+            _ => is_escaping = false
+        }
+
+        string.push(c);
+    }
+
+    if !is_closed {
+        return Err(TokenizeError::UnclosedQuotes);
+    }
+
+    Ok(Token::String(string))
+}
+
 fn tokenize_true(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
     for expected_char in "rue".chars() {
         if chars.peek() != Some(&expected_char) {
@@ -172,6 +205,7 @@ mod tests {
 
     use super::{tokenize, Token};
 
+    // int
     #[test]
     fn integer() {
         let input = String::from("123");
@@ -192,27 +226,7 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
-    #[test]
-    fn decimal() {
-        let input = String::from("0.88");
-        let expected = [Token::Number(0.88)];
-
-        let actual = tokenize(input).unwrap();
-
-        assert_eq!(actual, expected)
-    }
-
-    #[test]
-    fn negative_decimal() {
-        let input = String::from("-0.88");
-        let expected = [Token::Number(-0.88)];
-
-        let actual = tokenize(input).unwrap();
-
-        assert_eq!(actual, expected)
-    }
-
-    #[test]
+        #[test]
     fn double_negative_integer() {
         let input = String::from("--123");
         let expected_error = input.parse::<f64>().unwrap_err();
@@ -243,6 +257,49 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
+    // string
+    #[test]
+    fn string() {
+        let input = String::from("\"string\"");
+        let expected = [Token::String("string".to_string())];
+
+        let actual = tokenize(input).unwrap();
+
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn unclosed_quotes() {
+        let input = String::from("\"string");
+        let expected = TokenizeError::UnclosedQuotes;
+
+        let actual = tokenize(input).unwrap_err();
+
+        assert_eq!(actual, expected)
+    }
+
+    // decimal
+    #[test]
+    fn decimal() {
+        let input = String::from("0.88");
+        let expected = [Token::Number(0.88)];
+
+        let actual = tokenize(input).unwrap();
+
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn negative_decimal() {
+        let input = String::from("-0.88");
+        let expected = [Token::Number(-0.88)];
+
+        let actual = tokenize(input).unwrap();
+
+        assert_eq!(actual, expected)
+    }
+
+    // exponent
     #[test]
     fn exponent() {
         let input = String::from("0.5e2");
@@ -263,6 +320,7 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
+    // punctuation
     #[test]
     fn just_comma() {
         let input = String::from(",");
@@ -290,6 +348,7 @@ mod tests {
         assert_eq!(actual, expected);
     }
 
+    // bool
     #[test]
     fn just_null() {
         let input = String::from("null");
