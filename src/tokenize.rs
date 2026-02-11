@@ -147,13 +147,11 @@ fn is_decimal(has_decimal: bool, has_exponenta: bool, c: char) -> bool {
 fn tokenize_string(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
     let mut string = String::new();
     let mut is_closed: bool = false;
-    let mut is_escaping: bool = false;
 
     while let Some(c) = chars.next() {
-        match c {
-            '"' if !is_escaping => { is_closed = true; break; },
-            '\\' => is_escaping = !is_escaping,
-            _ => is_escaping = false
+        if c == '"' {
+            is_closed = true;
+            break;
         }
 
         string.push(c);

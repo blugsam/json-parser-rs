@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+#[derive(Debug, PartialEq)]
 pub enum Value {
     Null,
     Boolean(bool),
@@ -10,6 +11,7 @@ pub enum Value {
 }
 
 mod tokenize;
+mod parse;
 
 #[cfg(test)]
 mod tests {
