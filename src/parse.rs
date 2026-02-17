@@ -1,4 +1,4 @@
-use std::{vec::IntoIter, iter::Peekable};
+use std::{collections::HashMap, iter::Peekable, vec::IntoIter};
 
 use crate::{Value, tokenize::Token};
 
@@ -7,7 +7,9 @@ pub enum TokenParseError {
     UnfinishedEscape,
     InvalidHexValue,
     InvalidCodePointValue,
-    ExpectedComma
+    ExpectedComma,
+    ExpectedProperty,
+    ExpectedColon
 }
 
 pub fn parse_tokens(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
@@ -20,12 +22,17 @@ pub fn parse_tokens(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, Tok
         Token::Number(number) => Ok(Value::Number(number)),
         Token::String(string) => parse_string(&string),
         Token::LeftBracket => parse_array(tokens),
-        Token::LeftBrace => todo!(),
+        Token::LeftBrace => parse_objects(tokens),
         _ => todo!()
     }
 }
 
 fn parse_string(input: &str) -> Result<Value, TokenParseError> {
+    let unescaped = unescape_string(input)?;
+    Ok(Value::String(unescaped))
+}
+
+fn unescape_string(input: &str) -> Result<String, TokenParseError> {
     let mut output = String::new();
 
     let mut is_escaping = false;
@@ -68,7 +75,7 @@ fn parse_string(input: &str) -> Result<Value, TokenParseError> {
         }
     }
 
-    Ok(Value::String(output))
+    Ok(output)
 }
 
 fn parse_array(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
@@ -95,8 +102,45 @@ fn parse_array(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenPar
     Ok(Value::Array(array))
 }
 
+fn parse_objects(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
+    let mut map = HashMap::new();
+
+    loop {
+        if let Some(&Token::RightBrace) = tokens.peek() {
+            break;
+        }
+
+        if let Some(Token::String(s)) = tokens.next() {
+            if let Some(Token::Colon) = tokens.next() {
+                let key = unescape_string(&s)?;
+                let value = parse_tokens(tokens)?;
+                map.insert(key, value);
+            } else {
+                return Err(TokenParseError::ExpectedColon)
+            }
+        } else {
+            return Err(TokenParseError::ExpectedProperty)
+        }
+
+        match tokens.peek() {
+            Some(Token::Comma) => {
+                tokens.next();
+            }
+            Some(Token::RightBrace) => {
+                break;
+            }
+            _ => return Err(TokenParseError::ExpectedComma)
+        }
+    }
+
+    tokens.next();
+
+    Ok(Value::Object(map))
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::iter::Peekable;
     use std::vec::IntoIter;
 
@@ -179,7 +223,7 @@ mod tests {
     }
 
     #[test]
-    fn parses_two_elements() {
+    fn parses_array_two_elements() {
         let input = input(vec![Token::LeftBracket, Token::Null, Token::Comma, Token::Number(16.0), Token::RightBracket]);
         let expected = Value::Array(vec![Value::Null, Value::Number(16.0)]);
 
@@ -221,6 +265,56 @@ mod tests {
             ]),
             Value::Null
         ]);
+
+        check(input, expected);
+    }
+
+    #[test]
+    fn parse_empty_object() {
+        let input = input(vec![Token::LeftBrace, Token::RightBrace]);
+        let expected = Value::Object(HashMap::new());
+
+        check(input, expected)
+    }
+
+    #[test]
+    fn parse_object() {
+        let input = input(vec![
+            Token::LeftBrace, 
+            Token::String("ASPNETCORE_ENVIRONMENT".into()), 
+            Token::Colon, 
+            Token::String("Development".into()),
+            Token::RightBrace]
+        );
+        
+        let mut map = HashMap::new();
+        map.insert(
+            "ASPNETCORE_ENVIRONMENT".into(),
+            Value::String("Development".into())
+        );
+
+        let expected = Value::Object(map);
+
+        check(input, expected)
+    }
+
+    #[test]
+    fn parse_object_with_escaped_chars() {
+        let input = input(vec![
+            Token::LeftBrace,
+            Token::String("key".to_string()),
+            Token::Colon,
+            Token::String("value with \\\"quotes\\\" and \\n newline".to_string()), 
+            Token::RightBrace]
+        );
+
+        let mut map = HashMap::new();
+        map.insert(
+            "key".to_string(), 
+            Value::String("value with \"quotes\" and \n newline".to_string())
+        );
+
+        let expected = Value::Object(map);
 
         check(input, expected);
     }
