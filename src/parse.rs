@@ -6,7 +6,8 @@ use crate::{Value, tokenize::Token};
 pub enum TokenParseError {
     UnfinishedEscape,
     InvalidHexValue,
-    InvalidCodePointValue
+    InvalidCodePointValue,
+    ExpectedComma
 }
 
 pub fn parse_tokens(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
@@ -18,8 +19,8 @@ pub fn parse_tokens(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, Tok
         Token::False => Ok(Value::Boolean(false)),
         Token::Number(number) => Ok(Value::Number(number)),
         Token::String(string) => parse_string(&string),
-        Token::LeftBracket => todo!(),
-        Token::RightBracket => todo!(),
+        Token::LeftBracket => parse_array(tokens),
+        Token::LeftBrace => todo!(),
         _ => todo!()
     }
 }
@@ -68,6 +69,30 @@ fn parse_string(input: &str) -> Result<Value, TokenParseError> {
     }
 
     Ok(Value::String(output))
+}
+
+fn parse_array(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
+    let mut array: Vec<Value> = Vec::new();
+
+    loop {
+        if *tokens.peek().unwrap() == Token::RightBracket {
+            break;
+        }
+        
+        let value = parse_tokens(tokens)?;
+        array.push(value);
+        
+        let token = tokens.next().unwrap();
+        match token {
+            Token::Comma => continue,
+            Token::RightBracket => return Ok(Value::Array(array)),
+            _ => return Err(TokenParseError::ExpectedComma),
+        }
+    }
+
+    tokens.next();
+
+    Ok(Value::Array(array))
 }
 
 #[cfg(test)]
@@ -141,6 +166,61 @@ mod tests {
     fn parses_string_unescape_backslash() {
         let input = input(vec![Token::String(r#"hello\\world"#.into())]);
         let expected = Value::String(r#"hello\\world"#.into());
+
+        check(input, expected);
+    }
+
+    #[test]
+    fn parses_array_one_element() {
+        let input = input(vec![Token::LeftBracket, Token::True, Token::RightBracket]);
+        let expected = Value::Array(vec![Value::Boolean(true)]);
+
+        check(input, expected);
+    }
+
+    #[test]
+    fn parses_two_elements() {
+        let input = input(vec![Token::LeftBracket, Token::Null, Token::Comma, Token::Number(16.0), Token::RightBracket]);
+        let expected = Value::Array(vec![Value::Null, Value::Number(16.0)]);
+
+        check(input, expected)
+    }
+
+    #[test]
+    fn parses_empty_array() {
+        let input = input(vec![Token::LeftBracket, Token::RightBracket]);
+        let expected = Value::Array(vec![]);
+
+        check(input, expected)
+    }
+
+    #[test]
+    fn parse_nested_array() {
+        let input = input(vec![
+            Token::LeftBracket,
+            Token::Null,
+            Token::Comma, 
+            Token::Number(16.0),
+            Token::Comma,
+            Token::LeftBracket, 
+            Token::Null,
+            Token::Comma,
+            Token::Number(16.0),
+            Token::RightBracket,
+            Token::Comma,
+            Token::Null,
+            Token::RightBracket]
+        );
+        
+        let expected = Value::Array(vec![
+            Value::Null,
+            Value::Number(16.0),
+            Value::Array(vec![
+                Value::Null,
+                Value::Number(16.0)
+            ]),
+            Value::Null
+        ]);
 
         check(input, expected);
     }
