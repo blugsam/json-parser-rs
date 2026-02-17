@@ -209,7 +209,7 @@ mod tests {
     #[test]
     fn parses_string_unescape_backslash() {
         let input = input(vec![Token::String(r#"hello\\world"#.into())]);
-        let expected = Value::String(r#"hello\\world"#.into());
+        let expected = Value::String(r#"hello\world"#.into());
 
         check(input, expected);
     }
