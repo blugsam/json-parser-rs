@@ -26,6 +26,13 @@ pub enum Token {
     String(String)
 }
 
+#[cfg(test)]
+impl Token {
+    pub(crate) fn string(input: &str) -> Self {
+        Self::String(String::from(input))
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum TokenizeError {
     UnfinishedLiteralValue,
@@ -259,7 +266,7 @@ mod tests {
     #[test]
     fn string() {
         let input = String::from("\"string\"");
-        let expected = [Token::String("string".to_string())];
+        let expected = [Token::string("string")];
 
         let actual = tokenize(input).unwrap();
 
