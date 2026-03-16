@@ -1,7 +1,7 @@
-use std::{char, str::Chars, iter::Peekable, num::ParseFloatError};
+use std::{char, num::ParseFloatError};
 
 #[derive(Debug, PartialEq)]
-pub enum Token {
+pub enum Token<'a> {
     /// `{`
     LeftBrace,
     /// `}`
@@ -23,14 +23,7 @@ pub enum Token {
     /// Any number literal
     Number(f64),
     /// Key of the key/value pair of string value
-    String(String)
-}
-
-#[cfg(test)]
-impl Token {
-    pub(crate) fn string(input: &str) -> Self {
-        Self::String(String::from(input))
-    }
+    String(&'a str)
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -40,46 +33,44 @@ pub enum TokenizeError {
     ParseNumberError(ParseFloatError),
     UnclosedQuotes,
     CharNotRecognized(char),
-    UnexpectedEof
+    UnexpectedCharacter,
+    UnexpectedEof,
 }
 
-pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
-    let mut chars = input.chars().peekable();
-
+pub fn tokenize<'a>(input: &'a str) -> Result<Vec<Token<'a>>, TokenizeError> {
     let mut tokens = Vec::new();
+    let mut current_input = input.trim_start();
 
-    while let Some(c) = chars.next() {
-        let token = make_token(&mut chars,c)?;
+    while !current_input.is_empty() {
+        let (token, remaining) = make_token(current_input)?;
+        
         tokens.push(token);
+        
+        current_input = remaining.trim_start();
     }
     
     Ok(tokens)
 }
 
-fn make_token(chars: &mut Peekable<Chars<'_>>, mut ch: char) -> Result<Token, TokenizeError> {
-    while ch.is_ascii_whitespace() {
-        if chars.peek() == None {
-            return Err(TokenizeError::UnexpectedEof);
-        }
-        ch = chars.next().unwrap();
-    }
+fn make_token<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    let ch = input.chars().next().ok_or(TokenizeError::UnexpectedEof)?;
 
-    let token = match ch {
-        c if is_number(ch) => tokenize_float(chars, c)?,
-        '"' => tokenize_string(chars)?,
-        '[' => Token::LeftBracket,
-        ']' => Token::RightBracket,
-        '{' => Token::LeftBrace,
-        '}' => Token::RightBrace,
-        ',' => Token::Comma,
-        ':' => Token::Colon,
-        't' => tokenize_true(chars)?,
-        'f' => tokenize_false(chars)?,
-        'n' => tokenize_null(chars)?,
-        ch => return Err(TokenizeError::CharNotRecognized(ch)),
+    let (token, next_pos) = match ch {
+        c if is_number(ch) => tokenize_float(input)?,
+        '"' => tokenize_string(input)?,
+        '[' => (Token::LeftBracket, &input[1..]),
+        ']' => (Token::RightBracket, &input[1..]),
+        '{' => (Token::LeftBrace, &input[1..]),
+        '}' => (Token::RightBrace, &input[1..]),
+        ',' => (Token::Comma, &input[1..]),
+        ':' => (Token::Colon, &input[1..]),
+        't' => tokenize_true(input)?,
+        'f' => tokenize_false(input)?,
+        'n' => tokenize_null(input)?,
+        _ => return Err(TokenizeError::CharNotRecognized(ch)),
     };
 
-    Ok(token)
+    Ok((token, next_pos))
 }
 
 fn is_number(ch: char) -> bool {
@@ -90,118 +81,119 @@ fn is_number(ch: char) -> bool {
     }
 }
 
-fn tokenize_float(chars: &mut Peekable<Chars<'_>>, ch: char) -> Result<Token, TokenizeError> {
-    let mut unparsed_num = String::new();
-    unparsed_num.push(ch);
+fn tokenize_float<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    let bytes = input.as_bytes();
+    let mut pos = 0;
 
-    if ch == '-' {
-        if chars.peek().is_some_and(|&c| c == '0') {
-            unparsed_num.push(chars.next().unwrap());
-
-            if chars.peek().is_some_and(|&c| c.is_ascii_digit()) {
-                return  Err(TokenizeError::InvalidNumber("Invalid number provided.".to_string()));
-            }
-        }
+    if pos < bytes.len() && bytes[pos] == b'-' {
+        pos += 1;
     }
 
-    if ch == '0' {
-        if chars.peek().is_some_and(|&c| c.is_ascii_digit()) {
+    match bytes.get(pos) {
+        Some(&b'0') => {
+            pos += 1;
+            if bytes.get(pos).map_or(false, |b| b.is_ascii_digit()) {
+                return Err(TokenizeError::InvalidNumber("Invalid number provided.".to_string()));
+            }
+        }
+        Some(&b) if b.is_ascii_digit() => {
+            while let Some(&b) = bytes.get(pos) {
+                if !b.is_ascii_digit() { break; }
+                pos += 1;
+            }
+        }
+        Some(_) => return Err(TokenizeError::UnexpectedCharacter),
+        None => return Err(TokenizeError::UnexpectedEof),
+    }
+
+    if pos < bytes.len() && bytes[pos] == b'.' {
+        pos += 1;
+        let mut has_fraction = false;
+        
+        while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+            has_fraction = true;
+            pos += 1;
+        }
+        
+        if !has_fraction {
             return Err(TokenizeError::InvalidNumber("Invalid number provided.".to_string()));
-        } 
-    }
-
-    let mut has_decimal = false;
-    let mut has_exponent = false;
-
-    while let Some(&c) = chars.peek() {
-        match c {
-            c if c.is_ascii_digit() => unparsed_num.push(chars.next().unwrap()),
-            c if is_exponenta(has_exponent, c, chars) => {
-                unparsed_num.push(chars.next().unwrap());
-                has_exponent = true;
-                
-                if chars.peek().is_some_and(|&c| c == '+' || c == '-' ) {
-                    unparsed_num.push(chars.next().unwrap());
-                }
-
-                if !chars.peek().is_some_and(|c| c.is_ascii_digit()) {
-                    return Err(TokenizeError::InvalidNumber("Invalid number provided.".to_string()));
-                }
-            },
-            c if is_decimal(has_decimal, has_exponent, c) => {
-                unparsed_num.push('.');
-                has_decimal = true;
-                chars.next();
-            }
-            _ => break,
         }
     }
 
-    match unparsed_num.parse::<f64>() {
-        Ok(f) => Ok(Token::Number(f)),
+    if pos < bytes.len() && (bytes[pos] == b'e' || bytes[pos] == b'E') {
+        pos += 1;
+        
+        if pos < bytes.len() && (bytes[pos] == b'+' || bytes[pos] == b'-') {
+            pos += 1;
+        }
+        
+        let mut has_exponent = false;
+        while pos < bytes.len() && bytes[pos].is_ascii_digit() {
+            has_exponent = true;
+            pos += 1;
+        }
+        
+        if !has_exponent {
+            return Err(TokenizeError::InvalidNumber("Invalid number provided.".to_string()))
+        }
+    }
+
+    let num_slice = &input[..pos];
+    let remaining = &input[pos..];
+
+    match num_slice.parse::<f64>() {
+        Ok(f) => Ok((Token::Number(f), remaining)),
         Err(e) => Err(TokenizeError::ParseNumberError(e))
     }
 }
 
-fn is_exponenta(has_exponent: bool, c: char, chars: &mut Peekable<Chars<'_>>) -> bool {
-    !has_exponent && matches!(c, 'e' | 'E') && chars.peek().is_some()
+fn tokenize_string<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    let content = &input[1..];
+    
+    let end = content.find('"')
+        .ok_or(TokenizeError::UnclosedQuotes)?;
+        
+    let token = Token::String(&content[..end]);
+    
+    let remaining = &content[end + 1..];
+    
+    Ok((token, remaining))
 }
 
-fn is_decimal(has_decimal: bool, has_exponenta: bool, c: char) -> bool {
-    c == '.' && !has_decimal && !has_exponenta
+fn tokenize_true<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    const LITERAL: &str = "true";
+
+    if !input.starts_with(LITERAL) {
+        return Err(TokenizeError::UnfinishedLiteralValue);
+    }
+
+    let remaining = &input[LITERAL.len()..];
+
+    Ok((Token::True, remaining))
 }
 
-fn tokenize_string(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
-    let mut string = String::new();
-    let mut is_closed: bool = false;
+fn tokenize_false<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    const LITERAL: &str = "false";
 
-    while let Some(c) = chars.next() {
-        if c == '"' {
-            is_closed = true;
-            break;
-        }
-
-        string.push(c);
+    if !input.starts_with(LITERAL) {
+        return Err(TokenizeError::UnfinishedLiteralValue);
     }
 
-    if !is_closed {
-        return Err(TokenizeError::UnclosedQuotes);
-    }
+    let remaining = &input[LITERAL.len()..];
 
-    Ok(Token::String(string))
+    Ok((Token::False, remaining))
 }
 
-fn tokenize_true(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
-    for expected_char in "rue".chars() {
-        if chars.peek() != Some(&expected_char) {
-            return Err(TokenizeError::UnfinishedLiteralValue)
-        }
-        chars.next();
+fn tokenize_null<'a>(input: &'a str) -> Result<(Token<'a>, &'a str), TokenizeError> {
+    const LITERAL: &str = "null";
+
+    if !input.starts_with(LITERAL) {
+        return Err(TokenizeError::UnfinishedLiteralValue);
     }
 
-    Ok(Token::True)
-}
+    let remaining = &input[LITERAL.len()..];
 
-fn tokenize_false(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
-    for expected_char in "alse".chars() {
-        if chars.peek() != Some(&expected_char) {
-            return Err(TokenizeError::UnfinishedLiteralValue)
-        }
-        chars.next();
-    }
-
-    Ok(Token::False)
-}
-
-fn tokenize_null(chars: &mut Peekable<Chars<'_>>) -> Result<Token, TokenizeError> {
-    for expected_char in "ull".chars() {
-        if chars.peek() != Some(&expected_char) {
-            return Err(TokenizeError::UnfinishedLiteralValue);
-        }
-        chars.next();
-    }
-
-    Ok(Token::Null)
+    Ok((Token::Null, remaining))
 }
 
 #[cfg(test)]
@@ -231,12 +223,11 @@ mod tests {
         assert_eq!(actual, expected)
     }
 
-        #[test]
+    #[test]
     fn double_negative_integer() {
         let input = String::from("--123");
-        let expected_error = input.parse::<f64>().unwrap_err();
-        let expected = TokenizeError::ParseNumberError(expected_error);
-
+        
+        let expected = TokenizeError::UnexpectedCharacter; 
         let actual = tokenize(&input).unwrap_err();
 
         assert_eq!(actual, expected)
@@ -266,7 +257,7 @@ mod tests {
     #[test]
     fn string() {
         let input = String::from("\"string\"");
-        let expected = [Token::string("string")];
+        let expected = [Token::String("string")];
 
         let actual = tokenize(&input).unwrap();
 

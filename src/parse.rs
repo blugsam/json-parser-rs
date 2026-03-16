@@ -1,4 +1,4 @@
-use std::{collections::HashMap, iter::Peekable, vec::IntoIter};
+use std::{collections::HashMap, iter::Peekable, vec::IntoIter, borrow::Cow};
 
 use crate::{Value, tokenize::Token};
 
@@ -7,33 +7,40 @@ pub enum TokenParseError {
     UnfinishedEscape,
     InvalidHexValue,
     InvalidCodePointValue,
+    UnexpectedEof,
     ExpectedComma,
     ExpectedProperty,
-    ExpectedColon
+    ExpectedColon,
+    ExpectedValue,
 }
 
-pub fn parse_tokens(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
-    let token = tokens.next().unwrap();
+pub fn parse_tokens<'a>(tokens: &mut Peekable<IntoIter<Token<'a>>>) -> Result<Value<'a>, TokenParseError> {
+    let token = tokens.next().ok_or(TokenParseError::UnexpectedEof)?;
 
     match token {
         Token::Null => Ok(Value::Null),
-        Token::True => Ok(Value::Boolean(true)),    
+        Token::True => Ok(Value::Boolean(true)),
         Token::False => Ok(Value::Boolean(false)),
-        Token::Number(number) => Ok(Value::Number(number)),
-        Token::String(string) => parse_string(&string),
+        Token::Number(n) => Ok(Value::Number(n)),
+        Token::String(s) => parse_string(s),
         Token::LeftBracket => parse_array(tokens),
         Token::LeftBrace => parse_objects(tokens),
-        _ => todo!()
+        
+        _ => Err(TokenParseError::ExpectedValue),
     }
 }
 
-fn parse_string(input: &str) -> Result<Value, TokenParseError> {
+fn parse_string<'a>(input: &'a str) -> Result<Value<'a>, TokenParseError> {
+    if !input.contains('\\') {
+        return Ok(Value::String(Cow::Borrowed(input)));
+    }
+
     let unescaped = unescape_string(input)?;
     Ok(Value::String(unescaped))
 }
 
-fn unescape_string(input: &str) -> Result<String, TokenParseError> {
-    let mut output = String::new();
+fn unescape_string<'a>(input: &'a str) -> Result<Cow<'a, str>, TokenParseError> {
+    let mut output = String::with_capacity(input.len());
 
     let mut is_escaping = false;
 
@@ -75,21 +82,21 @@ fn unescape_string(input: &str) -> Result<String, TokenParseError> {
         }
     }
 
-    Ok(output)
+    Ok(Cow::Owned(output))
 }
 
-fn parse_array(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
-    let mut array: Vec<Value> = Vec::new();
+fn parse_array<'a>(tokens: &mut Peekable<IntoIter<Token<'a>>>) -> Result<Value<'a>, TokenParseError> {
+    let mut array: Vec<Value<'a>> = Vec::new();
 
     loop {
-        if *tokens.peek().unwrap() == Token::RightBracket {
-            break;
-        }
+        let next_token = tokens.peek().ok_or(TokenParseError::UnexpectedEof)?;
+        
+        if *next_token == Token::RightBracket { break; }
         
         let value = parse_tokens(tokens)?;
         array.push(value);
         
-        let token = tokens.next().unwrap();
+        let token = tokens.next().ok_or(TokenParseError::UnexpectedEof)?;
         match token {
             Token::Comma => continue,
             Token::RightBracket => return Ok(Value::Array(array)),
@@ -102,8 +109,8 @@ fn parse_array(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenPar
     Ok(Value::Array(array))
 }
 
-fn parse_objects(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenParseError> {
-    let mut map = HashMap::new();
+fn parse_objects<'a>(tokens: &mut Peekable<IntoIter<Token<'a>>>) -> Result<Value<'a>, TokenParseError> {
+    let mut map: HashMap<Cow<'a, str>, Value<'a>> = HashMap::new();
 
     loop {
         if let Some(&Token::RightBrace) = tokens.peek() {
@@ -112,7 +119,7 @@ fn parse_objects(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenP
 
         if let Some(Token::String(s)) = tokens.next() {
             if let Some(Token::Colon) = tokens.next() {
-                let key = unescape_string(&s)?;
+                let key = unescape_string(s)?;
                 let value = parse_tokens(tokens)?;
                 map.insert(key, value);
             } else {
@@ -122,24 +129,19 @@ fn parse_objects(tokens: &mut Peekable<IntoIter<Token>>) -> Result<Value, TokenP
             return Err(TokenParseError::ExpectedProperty)
         }
 
-        match tokens.peek() {
-            Some(Token::Comma) => {
-                tokens.next();
-            }
-            Some(Token::RightBrace) => {
-                break;
-            }
-            _ => return Err(TokenParseError::ExpectedComma)
+        match tokens.next() {
+            Some(Token::RightBrace) => break,
+            Some(Token::Comma) => { }
+            _ => return Err(TokenParseError::ExpectedComma),
         }
     }
-
-    tokens.next();
 
     Ok(Value::Object(map))
 }
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
     use std::collections::HashMap;
     use std::iter::Peekable;
     use std::vec::IntoIter;
@@ -192,16 +194,16 @@ mod tests {
 
     #[test]
     fn parses_string_non_ascii() {
-        let input = input(vec![Token::String("urrr madddd".to_string())]);
-        let expected = Value::String(String::from("urrr madddd"));
+        let input = input(vec![Token::String("urrr madddd")]);
+        let expected = Value::String(Cow::Owned("urrr madddd".into()));
 
         check(input, expected);
     }
 
     #[test]
     fn parses_string_with_emoji() {
-        let input = input(vec![Token::String("💩💩💩💩💩".to_string())]);
-        let expected = Value::String(String::from("💩💩💩💩💩"));
+        let input = input(vec![Token::String("💩💩💩💩💩")]);
+        let expected = Value::String(Cow::Owned("💩💩💩💩💩".into()));
 
         check(input, expected);
     }
@@ -302,16 +304,16 @@ mod tests {
     fn parse_object_with_escaped_chars() {
         let input = input(vec![
             Token::LeftBrace,
-            Token::String("key".to_string()),
+            Token::String("key"),
             Token::Colon,
-            Token::String("value with \\\"quotes\\\" and \\n newline".to_string()), 
+            Token::String("value with \\\"quotes\\\" and \\n newline"), 
             Token::RightBrace]
         );
 
         let mut map = HashMap::new();
         map.insert(
-            "key".to_string(), 
-            Value::String("value with \"quotes\" and \n newline".to_string())
+            Cow::Owned("key".into()), 
+            Value::String("value with \"quotes\" and \n newline".into())
         );
 
         let expected = Value::Object(map);

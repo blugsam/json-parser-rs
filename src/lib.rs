@@ -1,36 +1,38 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, borrow::Cow};
 use crate::tokenize::{tokenize, TokenizeError};
 use crate::parse::{parse_tokens, TokenParseError};
 
 mod tokenize;
 mod parse;
 
-pub fn parse<'a>(input: &'a str) -> Result<Value, ParseError> {
+pub fn parse<'a>(input: &'a str) -> Result<Value<'a>, ParseError> {
     let tokens = tokenize(input)?;
     let value = parse_tokens(&mut tokens.into_iter().peekable())?;
     Ok(value)
 }
 
 #[derive(Debug, PartialEq)]
-pub enum Value {
+pub enum Value<'a> {
     Null,
     Boolean(bool),
-    String(String),
+    String(Cow<'a, str>), 
     Number(f64),
-    Array(Vec<Value>),
-    Object(HashMap<String,Value>)
+    Array(Vec<Value<'a>>),
+    Object(HashMap<Cow<'a, str>, Value<'a>>),
 }
 
 #[cfg(test)]
-impl Value {
+impl<'a> Value<'a> {
     pub(crate) fn object<const N: usize>(pairs: [(&'static str, Self); N]) -> Self {
-        let owned_pairs = pairs.map(|(key, value)| (String::from(key), value));
-        let map = HashMap::from(owned_pairs);
+        let map: HashMap<Cow<'a, str>, Self> = pairs
+            .into_iter()
+            .map(|(key, value)| (Cow::Borrowed(key), value))
+            .collect();
         Self::Object(map)
     }
 
-    pub(crate) fn string(s: &str) -> Self {
-        Self::String(String::from(s))
+    pub(crate) fn string(s: &'a str) -> Self {
+        Self::String(Cow::Borrowed(s))
     }
 }
 
@@ -54,6 +56,8 @@ impl From<TokenizeError> for ParseError {
 
 #[cfg(test)]
 mod tests {
+    use std::borrow::Cow;
+
     use crate::{ParseError, parse};
     use crate::Value;
 
@@ -134,7 +138,7 @@ mod tests {
     fn object_with_string() {
         check_valid(
             r#"{"key": "value"}"#,
-            Value::object([("key", Value::String("value".to_string()))]),
+            Value::object([("key", Value::String(Cow::Borrowed("value")))]),
         );
     }
 
@@ -171,7 +175,7 @@ mod tests {
     }
 
     #[test]
-    fn parse_valid_complex() {
+    fn parse_valid_nested() {
         check_valid(
             r#"{"user": {"id": 1415436218769, "tags": ["admin", "ru"]}}"#,
             Value::object([
