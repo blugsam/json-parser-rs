@@ -43,7 +43,7 @@ pub enum TokenizeError {
     UnexpectedEof
 }
 
-pub fn tokenize(input: String) -> Result<Vec<Token>, TokenizeError> {
+pub fn tokenize(input: &str) -> Result<Vec<Token>, TokenizeError> {
     let mut chars = input.chars().peekable();
 
     let mut tokens = Vec::new();
@@ -216,7 +216,7 @@ mod tests {
         let input = String::from("123");
         let expected = [Token::Number(123.0)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -226,7 +226,7 @@ mod tests {
         let input = String::from("-123");
         let expected = [Token::Number(-123.0)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -237,7 +237,7 @@ mod tests {
         let expected_error = input.parse::<f64>().unwrap_err();
         let expected = TokenizeError::ParseNumberError(expected_error);
 
-        let actual = tokenize(input).unwrap_err();
+        let actual = tokenize(&input).unwrap_err();
 
         assert_eq!(actual, expected)
     }
@@ -247,7 +247,7 @@ mod tests {
         let input = String::from("00");
         let expected = TokenizeError::InvalidNumber("Invalid number provided.".to_string());
 
-        let actual = tokenize(input).unwrap_err();
+        let actual = tokenize(&input).unwrap_err();
 
         assert_eq!(actual, expected)
     }
@@ -257,7 +257,7 @@ mod tests {
         let input = String::from("-00");
         let expected = TokenizeError::InvalidNumber("Invalid number provided.".to_string());
 
-        let actual = tokenize(input).unwrap_err();
+        let actual = tokenize(&input).unwrap_err();
 
         assert_eq!(actual, expected)
     }
@@ -268,7 +268,7 @@ mod tests {
         let input = String::from("\"string\"");
         let expected = [Token::string("string")];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -278,7 +278,7 @@ mod tests {
         let input = String::from("\"string");
         let expected = TokenizeError::UnclosedQuotes;
 
-        let actual = tokenize(input).unwrap_err();
+        let actual = tokenize(&input).unwrap_err();
 
         assert_eq!(actual, expected)
     }
@@ -289,7 +289,7 @@ mod tests {
         let input = String::from("0.88");
         let expected = [Token::Number(0.88)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -299,7 +299,7 @@ mod tests {
         let input = String::from("-0.88");
         let expected = [Token::Number(-0.88)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -310,7 +310,7 @@ mod tests {
         let input = String::from("0.5e2");
         let expected = [Token::Number(0.5e2)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -320,7 +320,7 @@ mod tests {
         let input = String::from("-0.5e2");
         let expected = [Token::Number(-0.5e2)];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected)
     }
@@ -331,7 +331,7 @@ mod tests {
         let input = String::from(",");
         let expected = [Token::Comma];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -348,7 +348,7 @@ mod tests {
             Token::Colon,
         ];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -359,7 +359,7 @@ mod tests {
         let input = String::from("null");
         let expected = [Token::Null];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -369,7 +369,7 @@ mod tests {
         let input = String::from("true");
         let expected = [Token::True];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -379,7 +379,7 @@ mod tests {
         let input = String::from("false");
         let expected = [Token::False];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }
@@ -389,7 +389,7 @@ mod tests {
         let input = String::from("true,");
         let expected = [Token::True, Token::Comma];
 
-        let actual = tokenize(input).unwrap();
+        let actual = tokenize(&input).unwrap();
 
         assert_eq!(actual, expected);
     }

@@ -5,7 +5,7 @@ use crate::parse::{parse_tokens, TokenParseError};
 mod tokenize;
 mod parse;
 
-pub fn parse(input: String) -> Result<Value, ParseError> {
+pub fn parse<'a>(input: &'a str) -> Result<Value, ParseError> {
     let tokens = tokenize(input)?;
     let value = parse_tokens(&mut tokens.into_iter().peekable())?;
     Ok(value)
@@ -58,13 +58,13 @@ mod tests {
     use crate::Value;
 
     fn check_valid(input: &str, expected: Value) {
-        let actual = parse(String::from(input)).unwrap();
+        let actual = parse(input).unwrap();
         assert_eq!(actual, expected)
     }
 
     fn check_error<E: Into<ParseError>>(input: &str, expected: E) {
         let expected = expected.into();
-        let actual = parse(String::from(input)).unwrap_err();
+        let actual = parse(input).unwrap_err();
         assert_eq!(actual, expected);
     }
 
